@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "238983520640",
+    "project_id": "despensadomestica-f53fd",
+    "storage_bucket": "despensadomestica-f53fd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:238983520640:android:0bad91b37a700f7e3e6165",
+        "android_client_info": {
+          "package_name": "com.example.despensadomestica"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCRkoVqNSc724XyKuc5SuXFG4oRslcqGw0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

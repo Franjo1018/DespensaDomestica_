@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -45,6 +47,9 @@ dependencies {
     implementation libs.androidx.compose.ui.graphics
     implementation libs.androidx.compose.ui.tooling.preview
     implementation libs.androidx.compose.material3
+    // Íconos extendidos de Material: AddAPhoto no viene en el set básico que
+    // ya incluye material3 (ese solo trae unos pocos, como Edit y Delete).
+    implementation "androidx.compose.material:material-icons-extended"
     testImplementation libs.junit
     androidTestImplementation libs.androidx.junit
     androidTestImplementation libs.androidx.espresso.core
@@ -56,4 +61,25 @@ dependencies {
     implementation "com.squareup.retrofit2:converter-gson:3.0.0"
     implementation "com.squareup.okhttp3:logging-interceptor:4.12.0"
     implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0"
+    implementation libs.androidx.room.runtime
+    implementation libs.androidx.room.ktx
+    ksp libs.androidx.room.compiler
+    implementation libs.androidx.datastore.preferences
+
+    // Firebase: BOM fija las versiones de todos los módulos de Firebase entre sí.
+    // Desde el BOM 34.0.0 (julio 2025) Firebase dejó de publicar los módulos
+    // "-ktx": las extensiones de Kotlin (await(), Firebase.auth, etc.) ya
+    // vienen incluidas en los módulos base, así que se usan sin ese sufijo.
+    implementation platform(libs.firebase.bom)
+    implementation "com.google.firebase:firebase-auth"
+    implementation "com.google.firebase:firebase-firestore"
+    // No se usa firebase-storage-ktx: requiere el plan de pago Blaze. Las
+    // fotos se comprimen y se guardan como texto Base64 dentro del propio
+    // producto (Room y Firestore), sin necesidad de un bucket de Storage.
+
+    // Permite usar Task.await() de Firebase dentro de coroutines (viewModelScope).
+    implementation libs.kotlinx.coroutines.play.services
+
+    // Coil: muestra la vista previa local de la foto recién elegida (antes de comprimirla).
+    implementation libs.coil.compose
 }
