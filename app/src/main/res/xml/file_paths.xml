@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Carpeta temporal donde se guarda la foto tomada con la cámara antes de
+     comprimirla y guardarla como Base64 en el producto. -->
+<paths>
+    <cache-path name="fotos_temporales" path="." />
+</paths>
