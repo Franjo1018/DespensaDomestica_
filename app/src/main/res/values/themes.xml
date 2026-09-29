@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.DespensaDomestica" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Tema normal de la app (se usa una vez que ya se está mostrando la
+         pantalla de carga hecha con Compose, con el GIF animado). -->
+    <style name="Theme.DespensaDomestica" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/fondo_crema</item>
+    </style>
+
+    <!-- Tema de arranque (API oficial de SplashScreen): es lo que Android
+         dibuja obligatoriamente mientras el proceso de la app todavía se
+         está iniciando, antes de que exista cualquier pantalla propia. No
+         se puede eliminar (es un requisito del sistema operativo, no algo
+         que dependa de la app), pero en vez de dejarlo en blanco/genérico
+         se le pone el mismo fondo crema y el propio logo, para que se vea
+         continuo con el GIF que aparece justo después. -->
+    <style name="Theme.DespensaDomestica.Arranque" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/fondo_crema</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.DespensaDomestica</item>
+    </style>
 </resources>

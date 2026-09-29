@@ -7,4 +7,12 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Fondo crema del ícono de la app (mismo tono que el fondo del logo). -->
+    <color name="fondo_icono">#F4ECDF</color>
+
+    <!-- Mismo crema usado en el login y la pantalla de carga (SplashScreen).
+         Se usa también como windowBackground para evitar el destello blanco
+         al abrir la app. -->
+    <color name="fondo_crema">#FBF3E3</color>
 </resources>

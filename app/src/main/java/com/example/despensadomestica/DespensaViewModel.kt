@@ -38,6 +38,14 @@ class DespensaViewModel(application: Application) : AndroidViewModel(application
 
     fun cargarProductos() {
         viewModelScope.launch {
+            // Antes de refrescar desde la API propia, se intenta subir a
+            // Firestore todo lo que quedó pendiente (productos creados sin
+            // conexión, o que ya existían en Room desde antes de integrar
+            // Firebase). Así, cada vez que se abre/recarga la pantalla y
+            // hay conexión, esos productos "viejos" terminan de subirse
+            // solos, sin que el usuario tenga que volver a registrarlos.
+            repository.sincronizarPendientesConFirestore()
+
             val resultado = repository.sincronizarConServidor()
             mensajeEstado.value = if (resultado.isSuccess) {
                 ""

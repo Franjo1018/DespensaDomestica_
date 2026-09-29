@@ -2,6 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Necesarios para centrar el mapa en la ubicación del usuario (Google Maps API). -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Necesario para tomar la foto del producto con la cámara (además de poder elegirla de la galería). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Necesario desde Android 13 (API 33) para poder mostrar las
+         notificaciones de "producto por vencer". -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -14,12 +23,29 @@
 
         android:usesCleartextTraffic="true">
 
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyCW9ZTZKSHevgGE_j-BfzX3kjoYWvmJChM" />
+
+        <!-- Necesario para que la cámara pueda guardar la foto tomada en un
+             archivo temporal propio de la app y devolver su Uri (Android no
+             permite compartir rutas de archivo "crudas" entre apps desde
+             Android 7). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.DespensaDomestica">
+            android:theme="@style/Theme.DespensaDomestica.Arranque">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

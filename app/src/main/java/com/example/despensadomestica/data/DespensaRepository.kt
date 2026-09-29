@@ -17,6 +17,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -39,8 +40,21 @@ import java.io.ByteArrayOutputStream
  * Estrategia offline-first para escritura: cada operación (registrar,
  * editar, eliminar) se guarda PRIMERO en Room, así que la app queda
  * usable de inmediato aunque no haya internet. Después se intenta
- * reflejar el cambio en la API propia y en Firestore; si alguna falla
- * (sin conexión), el cambio queda pendiente de forma local.
+ * reflejar el cambio en la API propia y en Firestore; si Firestore falla
+ * (sin conexión, por ejemplo), el producto queda marcado como pendiente
+ * (sincronizadoFirestore = false) y sincronizarPendientesConFirestore()
+ * lo vuelve a intentar automáticamente la próxima vez que haya conexión
+ * (se llama cada vez que se recarga la lista de productos).
+ *
+ * Privacidad entre cuentas: Room es una sola base de datos compartida por
+ * TODAS las cuentas que hayan iniciado sesión en este dispositivo. Cada
+ * producto se guarda con el uid del usuario autenticado en ese momento
+ * (propietarioUid) y todas las lecturas/escrituras locales se filtran por
+ * ese uid, para que un usuario nunca vea ni pueda tocar los productos
+ * guardados localmente por otra cuenta en el mismo celular. Este
+ * Repository, además, se crea de nuevo cada vez que cambia el usuario con
+ * sesión iniciada (ver la key en DespensaScreen), así que su uid no
+ * queda "pegado" al de una sesión anterior.
  */
 class DespensaRepository(context: Context) {
 
@@ -52,6 +66,9 @@ class DespensaRepository(context: Context) {
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
 
+    /** uid del usuario con sesión iniciada al momento de crear este Repository. */
+    private val uid: String? = auth.currentUser?.uid
+
     /**
      * Último error al hablar con Firestore (null si no hubo ninguno). El
      * ViewModel lo puede mostrar en pantalla; también queda en Logcat con
@@ -62,39 +79,36 @@ class DespensaRepository(context: Context) {
 
     /**
      * Último error al hablar con la API REST propia (PHP/MySQL vía
-     * Retrofit). Incluye el tipo de excepción para distinguir la causa:
-     * ConnectException = la PC rechazó la conexión (Apache apagado o
-     * firewall bloqueando el puerto), SocketTimeoutException = no hubo
-     * respuesta a tiempo (WiFi distinta red, IP incorrecta, o firewall
-     * descartando el paquete en silencio), UnknownHostException = la IP/URL
-     * está mal escrita.
+     * Retrofit).
      */
     var ultimoErrorApi: String? = null
         private set
 
-    /** Lista de productos observada desde la base de datos local (Room). */
-    val productosLocales: Flow<List<Producto>> = dao.obtenerTodos().map { lista ->
-        lista.map { it.aProducto() }
+    /** Lista de productos (solo del usuario actual) observada desde la base de datos local (Room). */
+    val productosLocales: Flow<List<Producto>> = if (uid != null) {
+        dao.obtenerTodos(uid).map { lista -> lista.map { it.aProducto() } }
+    } else {
+        flowOf(emptyList())
     }
 
     /** Fecha/hora (epoch millis) de la última sincronización exitosa, desde DataStore. */
     val ultimaSincronizacion: Flow<Long> = preferencias.ultimaSincronizacion
 
     /** Referencia a la subcolección de productos del usuario autenticado, o null si no hay sesión. */
-    private fun coleccionUsuario() = auth.currentUser?.uid?.let { uid ->
-        firestore.collection("usuarios").document(uid).collection("productos")
-    }
+    private fun coleccionUsuario() = uid?.let { firestore.collection("usuarios").document(it).collection("productos") }
 
     /**
      * Trae la lista más reciente de la API REST propia (Retrofit) y
-     * reemplaza en Room solo los productos que ya tenían id real. Los
-     * productos creados sin conexión (todavía no subidos) se conservan.
+     * reemplaza en Room solo los productos del usuario actual que ya
+     * tenían id real. Los productos creados sin conexión (todavía no
+     * subidos) se conservan.
      */
     suspend fun sincronizarConServidor(): Result<Unit> {
+        val uidActual = uid ?: return Result.failure(Exception("No hay sesión iniciada"))
         return try {
-            val remotos = api.listarProductos()
-            dao.limpiarSincronizados()
-            dao.insertarTodos(remotos.map { it.aEntity() })
+            val remotos = api.listarProductos(uidActual)
+            dao.limpiarSincronizados(uidActual)
+            dao.insertarTodos(remotos.map { it.aEntity(propietario = uidActual) })
             preferencias.guardarUltimaSincronizacion(System.currentTimeMillis())
             ultimoErrorApi = null
             Result.success(Unit)
@@ -102,6 +116,24 @@ class DespensaRepository(context: Context) {
             ultimoErrorApi = "${e.javaClass.simpleName}: ${e.message}"
             Log.e("DespensaRepository", "Error al hablar con la API propia", e)
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Recorre los productos del usuario actual que todavía no se han
+     * subido a Cloud Firestore (los creados/editados sin conexión, y
+     * también los que ya existían en Room desde antes de integrar
+     * Firebase) e intenta subirlos ahora. Se debe llamar cada vez que hay
+     * oportunidad de que ya haya conexión (por ejemplo, al abrir/recargar
+     * la pantalla), para que el respaldo en la nube sea realmente
+     * automático y no dependa de que el usuario vuelva a tocar
+     * "Registrar" o "Actualizar".
+     */
+    suspend fun sincronizarPendientesConFirestore() {
+        val uidActual = uid ?: return
+        val pendientes = dao.obtenerPendientesDeFirestore(uidActual)
+        for (entidad in pendientes) {
+            respaldarEnFirestore(entidad.aProducto())
         }
     }
 
@@ -137,23 +169,34 @@ class DespensaRepository(context: Context) {
         }
     }
 
-    /** Respalda (crea o actualiza) el producto en Cloud Firestore, bajo el usuario autenticado. */
-    private suspend fun respaldarEnFirestore(producto: Producto) {
+    /**
+     * Respalda (crea o actualiza) el producto en Cloud Firestore, bajo el
+     * usuario autenticado. Si tiene éxito, marca el producto como
+     * sincronizado en Room para que no se vuelva a intentar subir.
+     *
+     * @return true si el respaldo en Firestore tuvo éxito.
+     */
+    private suspend fun respaldarEnFirestore(producto: Producto): Boolean {
         val coleccion = coleccionUsuario()
         if (coleccion == null) {
             ultimoErrorFirestore = "No hay sesión de Firebase iniciada, no se respaldó en la nube"
-            return
+            return false
         }
-        try {
+        return try {
             coleccion.document(producto.id.toString()).set(producto).await()
+            dao.marcarSincronizadoFirestore(producto.id)
             ultimoErrorFirestore = null
+            true
         } catch (e: Exception) {
             // Mejor esfuerzo: el producto ya está a salvo en Room y/o en la
             // API propia, pero dejamos rastro del error para poder
-            // depurarlo (causa típica: reglas de seguridad de Firestore en
-            // modo producción que bloquean la escritura).
+            // depurarlo (causa típica: sin conexión, o reglas de
+            // seguridad de Firestore en modo producción que bloquean la
+            // escritura). Queda con sincronizadoFirestore = false, así que
+            // sincronizarPendientesConFirestore() lo reintentará luego.
             ultimoErrorFirestore = e.message
             Log.e("DespensaRepository", "Error al respaldar en Firestore", e)
+            false
         }
     }
 
@@ -171,13 +214,14 @@ class DespensaRepository(context: Context) {
 
     /** @return true si además quedó sincronizado con la API REST propia; false si solo se guardó localmente. */
     suspend fun registrarProducto(producto: Producto, imagenUri: Uri? = null): Boolean {
+        val uidActual = uid ?: return false
         val idTemporal = generarIdLocalTemporal()
         val imagenBase64 = imagenUri?.let { convertirImagenABase64(it) }
         val productoLocal = producto.copy(id = idTemporal, imagenBase64 = imagenBase64)
-        dao.insertar(productoLocal.aEntity())
+        dao.insertar(productoLocal.aEntity(propietario = uidActual))
 
         val exito = try {
-            api.agregarProducto(producto)
+            api.agregarProducto(producto.copy(propietarioUid = uidActual))
             sincronizarConServidor()
             ultimoErrorApi = null
             true
@@ -192,12 +236,13 @@ class DespensaRepository(context: Context) {
     }
 
     suspend fun editarProducto(producto: Producto, imagenUri: Uri? = null): Boolean {
+        val uidActual = uid ?: return false
         val imagenBase64 = imagenUri?.let { convertirImagenABase64(it) } ?: producto.imagenBase64
         val productoConImagen = producto.copy(imagenBase64 = imagenBase64)
-        dao.insertar(productoConImagen.aEntity())
+        dao.insertar(productoConImagen.aEntity(propietario = uidActual))
 
         val exito = try {
-            api.editarProducto(producto)
+            api.editarProducto(producto.copy(propietarioUid = uidActual))
             sincronizarConServidor()
             true
         } catch (e: Exception) {
@@ -209,10 +254,11 @@ class DespensaRepository(context: Context) {
     }
 
     suspend fun eliminarProducto(id: Int): Boolean {
-        dao.eliminarPorId(id)
+        val uidActual = uid ?: return false
+        dao.eliminarPorId(id, uidActual)
         eliminarDeFirestore(id)
         return try {
-            api.eliminarProducto(EliminarRequest(id))
+            api.eliminarProducto(EliminarRequest(id, uidActual))
             true
         } catch (e: Exception) {
             false // sin conexión con la API propia: se eliminó localmente y en Firestore
@@ -224,14 +270,16 @@ class DespensaRepository(context: Context) {
         -((System.currentTimeMillis() % 1_000_000_000L).toInt().let { if (it <= 0) it - 1 else it })
 }
 
-private fun Producto.aEntity() = ProductoEntity(
+private fun Producto.aEntity(propietario: String, sincronizado: Boolean = false) = ProductoEntity(
     id = id,
     nombre = nombre,
     categoria = categoria,
     cantidad = cantidad,
     fechaVencimiento = fecha_vencimiento,
     estado = estado,
-    imagenBase64 = imagenBase64
+    imagenBase64 = imagenBase64,
+    sincronizadoFirestore = sincronizado,
+    propietarioUid = propietario
 )
 
 private fun ProductoEntity.aProducto() = Producto(

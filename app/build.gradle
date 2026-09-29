@@ -40,6 +40,10 @@ android {
 
 dependencies {
     implementation libs.androidx.core.ktx
+    // API oficial de pantalla de carga (splash) del sistema: permite que,
+    // en vez de un destello genérico, se vea el propio logo sobre el fondo
+    // crema desde el primer instante en que se abre la app.
+    implementation libs.androidx.core.splashscreen
     implementation libs.androidx.lifecycle.runtime.ktx
     implementation libs.androidx.activity.compose
     implementation platform(libs.androidx.compose.bom)
@@ -82,4 +86,18 @@ dependencies {
 
     // Coil: muestra la vista previa local de la foto recién elegida (antes de comprimirla).
     implementation libs.coil.compose
+    // Soporte de GIF animado para Coil, usado en la pantalla de carga (splash).
+    implementation libs.coil.gif
+
+    // Google Maps: SDK base + envoltorio en Composables (GoogleMap, Marker),
+    // para el mapa de puntos de referencia con productos baratos.
+    implementation libs.play.services.maps
+    implementation libs.maps.compose
+    // Última ubicación conocida del dispositivo, para centrar el mapa ahí
+    // automáticamente en vez de que el usuario tenga que buscarse.
+    implementation libs.play.services.location
+
+    // WorkManager: programa el chequeo diario de productos por vencer en
+    // segundo plano (VencimientoWorker), incluso con la app cerrada.
+    implementation libs.androidx.work.runtime.ktx
 }
